@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "obvec": {
+      "type": "http",
+      "url": "https://<worker_name>.<account_subdomain>.workers.dev/mcp"
+    }
+  }
+}

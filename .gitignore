@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.wrangler/
+worker-configuration.d.ts
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.dev.vars
+.dev.vars.*
+
+# Development documentation
+docs/dev/
+
+# Personal context
+CLAUDE.md
+
+# MCP configuration (use .mcp.json.example instead)
+.mcp.json
+
+# Wrangler configuration (use wrangler.toml.example instead)
+wrangler.toml
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# npm package files
+*.tgz
