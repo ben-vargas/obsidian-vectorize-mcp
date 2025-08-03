@@ -1,10 +1,10 @@
 import { Env, StatsResponse } from '../types';
-import { checkAuthHeader } from '../utils/auth';
+import { checkAuthAndRateLimit } from '../utils/auth';
 
 export async function handleStats(request: Request, env: Env): Promise<Response> {
-  // Check authorization
-  if (!checkAuthHeader(request, env)) {
-    return new Response('Unauthorized', { status: 401 });
+  // Check authorization and rate limit
+  if (!(await checkAuthAndRateLimit(request, env))) {
+    return new Response('Unauthorized or rate limit exceeded', { status: 401 });
   }
   
   try {
@@ -40,8 +40,10 @@ export async function handleStats(request: Request, env: Env): Promise<Response>
       cursor = r2Listed.truncated ? r2Listed.cursor : undefined;
     } while (r2Truncated);
     
-    // For Vectorize, since we're already listing R2, we know the count should match
-    const vectorCount = r2TotalCount; // They should be in sync
+    // For Vectorize, we assume count matches R2 since Cloudflare doesn't provide a direct count API
+    // In a properly synchronized system, these should match
+    // Note: This is an assumption - actual vector count may differ if sync issues occur
+    const vectorCount = r2TotalCount;
     
     const response: StatsResponse = {
       vectorize: {

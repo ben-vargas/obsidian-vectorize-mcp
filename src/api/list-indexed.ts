@@ -1,16 +1,30 @@
 import { Env } from '../types';
-import { checkAuthHeader } from '../utils/auth';
+import { checkAuthAndRateLimit } from '../utils/auth';
 
 export async function handleListIndexed(request: Request, env: Env): Promise<Response> {
-  // Check authorization
-  if (!checkAuthHeader(request, env)) {
-    return new Response('Unauthorized', { status: 401 });
+  // Check authorization and rate limit
+  if (!(await checkAuthAndRateLimit(request, env))) {
+    return new Response('Unauthorized or rate limit exceeded', { status: 401 });
   }
   
   try {
-    // List all objects in R2 notes/ prefix
-    const listed = await env.R2.list({ prefix: 'notes/' });
-    const files = listed.objects.map(obj => obj.key.replace('notes/', ''));
+    // List all objects in R2 notes/ prefix with pagination
+    const files: string[] = [];
+    let cursor: string | undefined;
+    let truncated = false;
+    
+    do {
+      const listed = await env.R2.list({ 
+        prefix: 'notes/',
+        limit: 1000,
+        cursor
+      });
+      
+      files.push(...listed.objects.map(obj => obj.key.replace('notes/', '')));
+      
+      truncated = listed.truncated;
+      cursor = listed.truncated ? listed.cursor : undefined;
+    } while (truncated);
     
     return new Response(JSON.stringify({
       success: true,

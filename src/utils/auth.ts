@@ -1,4 +1,5 @@
 import { Env } from '../types';
+import { constantTimeCompare } from './security';
 
 export async function checkRateLimit(ip: string, action: string, env: Env): Promise<boolean> {
   const key = `rate_limit:${action}:${ip}`;
@@ -26,5 +27,32 @@ export function checkAuthHeader(request: Request, env: Env): boolean {
   }
   
   const token = authHeader.substring(7);
-  return token === env.MCP_PASSWORD;
+  
+  // Use constant-time comparison to prevent timing attacks
+  if (!env.MCP_PASSWORD) {
+    return false;
+  }
+  
+  return constantTimeCompare(token, env.MCP_PASSWORD);
+}
+
+/**
+ * Combines authentication and rate limiting checks for API endpoints
+ * @param request - The incoming request
+ * @param env - Environment bindings
+ * @returns Promise<boolean> - true if both auth and rate limit pass
+ */
+export async function checkAuthAndRateLimit(request: Request, env: Env): Promise<boolean> {
+  // First check authentication
+  if (!checkAuthHeader(request, env)) {
+    return false;
+  }
+  
+  // Then check rate limiting
+  const clientIp = request.headers.get('CF-Connecting-IP') || 
+                   request.headers.get('X-Forwarded-For') || 
+                   'unknown';
+  
+  const allowed = await checkRateLimit(clientIp, 'api_request', env);
+  return allowed;
 }

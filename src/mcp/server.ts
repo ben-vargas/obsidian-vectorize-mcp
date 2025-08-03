@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Env, State } from '../types';
 import { generateEmbedding, getEmbeddingDimensions } from '../utils/embeddings';
+import { validateLimit, validateMinScore } from '../utils/validation';
 
 function registerObsidianTools(agent: ObsidianVectorizeMCP, env: Env) {
   const ai = env.AI;
@@ -21,8 +22,13 @@ function registerObsidianTools(agent: ObsidianVectorizeMCP, env: Env) {
         tags: z.array(z.string()).optional().describe("Filter by specific tags"),
         sortBy: z.enum(['relevance', 'createdAt', 'modifiedAt']).default('relevance').describe("Sort results by relevance, creation date, or modification date")
       },
-      async ({ query, limit, minScore, tags, sortBy }) => {
+      async ({ query, limit: rawLimit, minScore: rawMinScore, tags, sortBy }) => {
+        // Validate parameters (outside try to be accessible in catch)
+        const limit = validateLimit(rawLimit, 10, 50);
+        const minScore = validateMinScore(rawMinScore, 0.7);
+        
         try {
+          
           // Update state
           agent.setState({ 
             ...agent.state, 
@@ -100,8 +106,8 @@ function registerObsidianTools(agent: ObsidianVectorizeMCP, env: Env) {
             message: error.message,
             stack: error.stack,
             query,
-            limit,
-            minScore,
+            limit: limit,
+            minScore: minScore,
             tags
           });
           
@@ -236,27 +242,32 @@ ${fullContent}`
       },
       async ({ limit, tags, pathPrefix, sortBy, dateFrom, dateTo }) => {
         try {
-          // Query R2 directly for listing notes
+          // Query R2 directly for listing notes with pagination
           const prefix = pathPrefix ? `notes/${pathPrefix}` : 'notes/';
-          const r2Listed = await env.R2.list({ 
-            prefix,
-            limit: 1000 // R2 can handle larger limits
-          });
-
-          if (r2Listed.objects.length === 0) {
-            return {
-              content: [{
-                type: "text" as const,
-                text: 'No notes found matching the specified criteria.'
-              }]
-            };
-          }
-
           let notes = [];
+          let cursor: string | undefined;
+          let truncated = false;
+          let totalProcessed = 0;
           
-          // Process notes and apply filters
-          for (const obj of r2Listed.objects) {
-            if (notes.length >= limit) break;
+          do {
+            const r2Listed = await env.R2.list({ 
+              prefix,
+              limit: 1000,
+              cursor
+            });
+            
+            if (totalProcessed === 0 && r2Listed.objects.length === 0) {
+              return {
+                content: [{
+                  type: "text" as const,
+                  text: 'No notes found matching the specified criteria.'
+                }]
+              };
+            }
+            
+            // Process notes and apply filters
+            for (const obj of r2Listed.objects) {
+              if (notes.length >= limit) break;
             
             try {
               const noteData = await env.R2.get(obj.key);
@@ -295,6 +306,14 @@ ${fullContent}`
               continue;
             }
           }
+          
+          totalProcessed += r2Listed.objects.length;
+          truncated = r2Listed.truncated;
+          cursor = r2Listed.truncated ? r2Listed.cursor : undefined;
+          
+          // Stop if we have enough notes
+          if (notes.length >= limit) break;
+        } while (truncated);
 
           if (notes.length === 0) {
             return {
@@ -354,8 +373,12 @@ ${fullContent}`
         limit: z.number().min(1).max(20).default(10).describe("Maximum number of connections to return"),
         minScore: z.number().min(0).max(1).default(0.6).describe("Minimum similarity score for connections")
       },
-      async ({ reference, limit, minScore }) => {
+      async ({ reference, limit: rawLimit, minScore: rawMinScore }) => {
         try {
+          // Validate parameters
+          const limit = validateLimit(rawLimit, 10, 20);
+          const minScore = validateMinScore(rawMinScore, 0.6);
+          
           // Generate embedding for the reference
           const referenceEmbedding = await generateEmbedding(reference, env);
 

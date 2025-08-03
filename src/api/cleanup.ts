@@ -1,11 +1,12 @@
 import { Env } from '../types';
-import { checkAuthHeader } from '../utils/auth';
+import { checkAuthAndRateLimit } from '../utils/auth';
 import { hashPath } from '../utils/hash';
+import { sanitizePath } from '../utils/security';
 
 export async function handleCleanup(request: Request, env: Env): Promise<Response> {
-  // Check authorization
-  if (!checkAuthHeader(request, env)) {
-    return new Response('Unauthorized', { status: 401 });
+  // Check authorization and rate limit
+  if (!(await checkAuthAndRateLimit(request, env))) {
+    return new Response('Unauthorized or rate limit exceeded', { status: 401 });
   }
   
   try {
@@ -19,11 +20,20 @@ export async function handleCleanup(request: Request, env: Env): Promise<Respons
     
     // Delete from both R2 and Vectorize
     for (const file of files) {
+      // Validate and sanitize the path
+      let validatedPath;
+      try {
+        validatedPath = sanitizePath(file);
+      } catch (error) {
+        console.error(`Invalid path, skipping: ${file}`);
+        continue;
+      }
+      
       // Delete from R2
-      await env.R2.delete(`notes/${file}`);
+      await env.R2.delete(`notes/${validatedPath}`);
       
       // Delete from Vectorize (using the same hash ID generation)
-      const shortId = await hashPath(file);
+      const shortId = await hashPath(validatedPath);
       await env.VECTORIZE.deleteByIds([shortId]);
       deletedCount++;
     }

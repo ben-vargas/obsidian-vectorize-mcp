@@ -1,15 +1,16 @@
 import { Env, SearchResult } from '../types';
-import { checkAuthHeader } from '../utils/auth';
+import { checkAuthAndRateLimit } from '../utils/auth';
 import { generateEmbedding } from '../utils/embeddings';
+import { validateLimit } from '../utils/validation';
 
 export async function handleSearch(request: Request, env: Env): Promise<Response> {
-  // Check authorization
-  if (!checkAuthHeader(request, env)) {
-    return new Response('Unauthorized', { status: 401 });
+  // Check authorization and rate limit
+  if (!(await checkAuthAndRateLimit(request, env))) {
+    return new Response('Unauthorized or rate limit exceeded', { status: 401 });
   }
   
   try {
-    const { query, limit = 10, returnContent = false } = await request.json() as { 
+    const { query, limit: rawLimit, returnContent = false } = await request.json() as { 
       query: string; 
       limit?: number;
       returnContent?: boolean;
@@ -19,12 +20,15 @@ export async function handleSearch(request: Request, env: Env): Promise<Response
       return new Response('Query required', { status: 400 });
     }
     
+    // Validate and sanitize limit
+    const limit = validateLimit(rawLimit, 10, 50);
+    
     // Generate embedding for query
     const queryEmbedding = await generateEmbedding(query, env);
     
     // Search vectorize
     const results = await env.VECTORIZE.query(queryEmbedding, {
-      topK: Math.min(limit, 50),
+      topK: limit,
       returnMetadata: true
     });
     

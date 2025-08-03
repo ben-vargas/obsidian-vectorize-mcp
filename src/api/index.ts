@@ -1,12 +1,13 @@
 import { Env, Note } from '../types';
-import { checkAuthHeader } from '../utils/auth';
+import { checkAuthAndRateLimit } from '../utils/auth';
 import { generateEmbeddings } from '../utils/embeddings';
 import { hashPath, calculateChecksum } from '../utils/hash';
+import { sanitizePath } from '../utils/security';
 
 export async function handleIndex(request: Request, env: Env): Promise<Response> {
-  // Check authorization
-  if (!checkAuthHeader(request, env)) {
-    return new Response('Unauthorized', { status: 401 });
+  // Check authorization and rate limit
+  if (!(await checkAuthAndRateLimit(request, env))) {
+    return new Response('Unauthorized or rate limit exceeded', { status: 401 });
   }
   
   try {
@@ -17,8 +18,8 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
     }
     
     // Process notes in batches
-    const embeddings = [];
     const batchSize = 10;
+    let totalIndexed = 0;
     
     for (let i = 0; i < notes.length; i += batchSize) {
       const batch = notes.slice(i, i + batchSize);
@@ -27,15 +28,26 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
       // Generate embeddings
       const embeddingVectors = await generateEmbeddings(texts, env);
       
+      // Build embeddings for this batch only
+      const batchEmbeddings = [];
+      
       // Store in Vectorize with metadata
       for (let j = 0; j < batch.length; j++) {
         const note = batch[j];
         const embedding = embeddingVectors[j];
         
+        // Validate and sanitize the path
+        try {
+          note.path = sanitizePath(note.path);
+        } catch (error) {
+          console.error(`Invalid path for note: ${note.path}`);
+          continue; // Skip this note
+        }
+        
         // Generate a short ID from the path
         const shortId = await hashPath(note.path);
         
-        embeddings.push({
+        batchEmbeddings.push({
           id: shortId,
           values: embedding,
           metadata: {
@@ -49,17 +61,30 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
           }
         });
       }
+      
+      // Upsert this batch immediately to free memory
+      if (batchEmbeddings.length > 0) {
+        await env.VECTORIZE.upsert(batchEmbeddings);
+        totalIndexed += batchEmbeddings.length;
+      }
     }
-    
-    // Insert into Vectorize
-    await env.VECTORIZE.upsert(embeddings);
     
     // Store metadata in R2 for full content (only if changed)
     let r2Updated = 0;
     let r2Skipped = 0;
     
     for (const note of notes) {
-      const r2Key = `notes/${note.path}`;
+      // Validate path before creating R2 key
+      let validatedPath;
+      try {
+        validatedPath = sanitizePath(note.path);
+      } catch (error) {
+        console.error(`Skipping note with invalid path: ${note.path}`);
+        r2Skipped++;
+        continue;
+      }
+      
+      const r2Key = `notes/${validatedPath}`;
       
       // Calculate checksum of the note content
       const noteContent = JSON.stringify(note);
@@ -83,10 +108,10 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
     
     return new Response(JSON.stringify({
       success: true,
-      indexed: notes.length,
+      indexed: totalIndexed,
       r2Updated,
       r2Skipped,
-      message: `Successfully indexed ${notes.length} notes (R2: ${r2Updated} updated, ${r2Skipped} unchanged)`
+      message: `Successfully indexed ${totalIndexed} notes (R2: ${r2Updated} updated, ${r2Skipped} unchanged)`
     }), {
       headers: { 'Content-Type': 'application/json' }
     });

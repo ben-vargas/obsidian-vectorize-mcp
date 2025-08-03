@@ -1,11 +1,11 @@
 import { Env } from '../types';
 import { generateEmbedding } from '../utils/embeddings';
-import { checkAuthHeader } from '../utils/auth';
+import { checkAuthAndRateLimit } from '../utils/auth';
 
 export async function handleTestMCP(request: Request, env: Env): Promise<Response> {
-  // Check authorization
-  if (!checkAuthHeader(request, env)) {
-    return new Response('Unauthorized', { status: 401 });
+  // Check authorization and rate limit
+  if (!(await checkAuthAndRateLimit(request, env))) {
+    return new Response('Unauthorized or rate limit exceeded', { status: 401 });
   }
   
   try {
@@ -38,7 +38,9 @@ export async function handleTestMCP(request: Request, env: Env): Promise<Respons
     // Test 3: Try to query Vectorize
     let vectorizeTest = { success: false, error: '', count: 0 };
     try {
-      const dummyVector = new Array(1024).fill(0);
+      // Use EMBEDDING_DIMENSIONS from env, fallback to 1024
+      const dimensions = parseInt(env.EMBEDDING_DIMENSIONS || '1024');
+      const dummyVector = new Array(dimensions).fill(0);
       const results = await env.VECTORIZE.query(dummyVector, { topK: 1 });
       vectorizeTest = {
         success: true,

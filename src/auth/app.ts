@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Env } from '../types';
 import { checkRateLimit } from '../utils/auth';
+import { escapeHtml, generateCSRFToken, storeCSRFToken, validateCSRFToken } from '../utils/security';
 
 export type Bindings = Env & {
   OAUTH_PROVIDER: OAuthHelpers;
@@ -74,6 +75,14 @@ app.get("/authorize", async (c) => {
   }
 
   const oauthReqInfo = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
+
+  // Generate CSRF token
+  const csrfToken = await generateCSRFToken();
+  await storeCSRFToken(csrfToken, c.env.OAUTH_KV);
+
+  // Escape user-controlled values to prevent XSS
+  const escapedClientId = escapeHtml(oauthReqInfo.clientId);
+  const escapedRedirectUri = escapeHtml(oauthReqInfo.redirectUri);
 
   return c.html(`
     <!DOCTYPE html>
@@ -162,8 +171,8 @@ app.get("/authorize", async (c) => {
         <h1>🔐 Authorization Required</h1>
         
         <div class="client-info">
-          <strong>Application:</strong> ${oauthReqInfo.clientId}<br>
-          <strong>Redirect:</strong> ${oauthReqInfo.redirectUri}
+          <strong>Application:</strong> ${escapedClientId}<br>
+          <strong>Redirect:</strong> ${escapedRedirectUri}
         </div>
 
         <div class="scopes">
@@ -178,6 +187,7 @@ app.get("/authorize", async (c) => {
 
         <form method="post" action="/approve">
           <input type="hidden" name="oauth_req_info" value="${encodeURIComponent(JSON.stringify(oauthReqInfo))}" />
+          <input type="hidden" name="csrf_token" value="${csrfToken}" />
           
           <label for="password">Enter MCP Password:</label>
           <input type="password" id="password" name="password" required autofocus />
@@ -195,6 +205,13 @@ app.post("/approve", async (c) => {
   const formData = await c.req.parseBody();
   const password = formData.password as string;
   const oauthReqInfoStr = formData.oauth_req_info as string;
+  const csrfToken = formData.csrf_token as string;
+
+  // Validate CSRF token
+  const validToken = await validateCSRFToken(csrfToken, c.env.OAUTH_KV);
+  if (!validToken) {
+    return c.html('Invalid or expired request. Please try again.', 403);
+  }
 
   if (!oauthReqInfoStr) {
     return c.html('Invalid request', 400);
@@ -260,7 +277,7 @@ app.post("/approve", async (c) => {
     <html>
     <head>
       <title>Authorization Successful</title>
-      <meta http-equiv="refresh" content="3;url=${redirectTo}">
+      <meta http-equiv="refresh" content="3;url=${escapeHtml(redirectTo)}">
       <style>
         body {
           font-family: system-ui, -apple-system, sans-serif;
