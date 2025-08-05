@@ -3,7 +3,10 @@ import { constantTimeCompare } from './security';
 
 export async function checkRateLimit(ip: string, action: string, env: Env): Promise<boolean> {
   const key = `rate_limit:${action}:${ip}`;
-  const limit = action === 'auth_attempt' ? 5 : 10; // 5 attempts for auth, 10 for other actions
+  // More appropriate limits for different actions:
+  // - auth_attempt: 5 per 15 min (prevent brute force)
+  // - api_request: 100 per 15 min (allows indexing ~1000 notes per session)
+  const limit = action === 'auth_attempt' ? 5 : 100;
   const window = 60 * 15; // 15 minute window
   
   const current = await env.OAUTH_KV.get(key);
