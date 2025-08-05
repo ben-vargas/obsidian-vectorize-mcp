@@ -51,8 +51,10 @@ export function sanitizePath(path: string): string {
     }
   }
   
-  // Validate characters (alphanumeric, dash, underscore, slash, dot)
-  if (!/^[a-zA-Z0-9\-_\/\.]+$/.test(sanitized)) {
+  // Validate characters - allow common filename characters including spaces
+  // Disallow only dangerous characters that could cause security issues
+  const dangerousChars = /[\x00-\x1f\x7f<>:"|?*\\]/;
+  if (dangerousChars.test(sanitized)) {
     throw new Error('Path contains invalid characters');
   }
   
