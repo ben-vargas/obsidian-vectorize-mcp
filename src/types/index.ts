@@ -13,10 +13,13 @@ export interface Env {
   R2: R2Bucket;
   OAUTH_KV: KVNamespace; // Required for OAuth Provider Library
   MCP_OBJECT: DurableObjectNamespace; // MCP Durable Object
+  CHATGPT_MCP_OBJECT: DurableObjectNamespace; // ChatGPT-specific MCP Durable Object
   EMBEDDING_MODEL?: string;
   EMBEDDING_DIMENSIONS?: string;
   // Simple Authentication (for mock auth flow)
   MCP_PASSWORD?: string; // Set via wrangler secret put MCP_PASSWORD
+  // Obsidian configuration
+  OBSIDIAN_VAULT_NAME?: string; // Name of the Obsidian vault for URL generation
 }
 
 export type State = { 

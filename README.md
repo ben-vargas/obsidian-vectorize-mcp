@@ -91,7 +91,7 @@ On [claude.ai](https://claude.ai), add a custom MCP Connector:
 2. Click "Add Custom Connector"
 3. Enter your MCP endpoint:
    - **Streamable HTTP**: `https://obvec.<account_subdomain>.workers.dev/mcp` (recommended - current MCP spec)
-   - **SSE**: `https://obvec.<account_subdomain>.workers.dev/sse` (deprecated - for backward compatibility)
+   - **SSE**: `https://obvec.<account_subdomain>.workers.dev/sse` (deprecated - only use if required)
 
 **Note**: The MCP specification deprecated SSE on March 26, 2025. We recommend using the Streamable HTTP endpoint.
 
@@ -124,6 +124,30 @@ If you prefer to configure Claude Desktop directly instead of using Connectors, 
 ```
 
 Replace `<account_subdomain>` with your actual Cloudflare Workers subdomain in all examples.
+
+#### ChatGPT Integration
+This MCP server provides dedicated ChatGPT endpoints with optimized search/fetch tools:
+
+1. **Import as ChatGPT Connector**:
+   - In ChatGPT, go to Settings → Connectors
+   - Add a new connector using the ChatGPT-specific Streamable HTTP endpoint:
+     ```
+     https://obvec.<account_subdomain>.workers.dev/chatgpt/mcp
+     ```
+   - The server provides exactly the `search` and `fetch` tools ChatGPT requires
+   - Set `OBSIDIAN_VAULT_NAME` in your wrangler.toml for proper Obsidian URLs
+
+2. **Clean Separation**:
+   - ChatGPT uses `/chatgpt/mcp` (Streamable HTTP) or `/chatgpt/sse` (SSE) endpoints with only search/fetch tools
+   - Standard MCP clients use `/mcp` (Streamable HTTP) or `/sse` (SSE) endpoints with full Obsidian tools
+   - No tool confusion or conflicts between different client types
+
+3. **Use with Deep Research**:
+   - ChatGPT can use this connector for deep research tasks
+   - Your Obsidian notes become searchable knowledge for research
+   - Supports both chat connectors and API-based deep research
+
+**Architecture Note**: The server uses separate Durable Objects for standard MCP and ChatGPT endpoints, ensuring complete isolation and optimal performance for each use case.
 
 ## 🔐 Authentication & Security
 
@@ -160,9 +184,27 @@ obvec/
 │   └── cleanup-orphaned.ts          # Remove deleted notes
 ├── src/
 │   ├── api/                         # API endpoints
+│   │   ├── cleanup.ts               # Cleanup orphaned notes
+│   │   ├── index.ts                 # Index management
+│   │   ├── list-indexed.ts          # List indexed notes
+│   │   ├── router.ts                # API router
+│   │   ├── search.ts                # Search functionality
+│   │   ├── stats.ts                 # Statistics endpoint
+│   │   └── test-mcp.ts              # MCP testing utilities
 │   ├── auth/                        # Authentication UI
-│   ├── mcp/                         # MCP server implementation
+│   │   └── app.ts                   # OAuth app handler
+│   ├── mcp/                         # MCP server implementations
+│   │   ├── server.ts                # Standard MCP server (full tools)
+│   │   └── server-chatgpt.ts        # ChatGPT-specific server (search/fetch only)
 │   ├── types/                       # TypeScript types
+│   │   └── index.ts                 # Type definitions
+│   ├── utils/                       # Utility functions
+│   │   ├── auth.ts                  # Authentication utilities
+│   │   ├── embeddings.ts            # Embedding generation
+│   │   ├── formatting.ts            # Text formatting
+│   │   ├── hash.ts                  # Hashing utilities
+│   │   ├── security.ts              # Security utilities
+│   │   └── validation.ts            # Input validation
 │   └── index.ts                     # Main Worker entry
 ├── .env.example                     # Environment variables template
 ├── .gitignore                       # Git ignore patterns
