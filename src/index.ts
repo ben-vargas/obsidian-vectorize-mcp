@@ -21,12 +21,16 @@ export default {
     const oauthProvider = new OAuthProvider({
       apiHandlers: {
         // Standard MCP endpoints (full Obsidian tools)
-        '/sse': ObsidianVectorizeMCP.serveSSE('/sse'),
-        '/mcp': ObsidianVectorizeMCP.serve('/mcp'),
+        '/sse': ObsidianVectorizeMCP.serveSSE('/sse', { binding: 'MCP_OBJECT' }),
+        '/sse/': ObsidianVectorizeMCP.serveSSE('/sse', { binding: 'MCP_OBJECT' }),
+        '/mcp': ObsidianVectorizeMCP.serve('/mcp', { binding: 'MCP_OBJECT' }),
+        '/mcp/': ObsidianVectorizeMCP.serve('/mcp', { binding: 'MCP_OBJECT' }),
         
         // ChatGPT-specific endpoints (search/fetch only)
-        '/chatgpt/sse': ChatGPTMCP.serveSSE('/chatgpt/sse'),
-        '/chatgpt/mcp': ChatGPTMCP.serve('/chatgpt/mcp'),
+        '/chatgpt/sse': ChatGPTMCP.serveSSE('/chatgpt/sse', { binding: 'CHATGPT_MCP_OBJECT' }),
+        '/chatgpt/sse/': ChatGPTMCP.serveSSE('/chatgpt/sse', { binding: 'CHATGPT_MCP_OBJECT' }),
+        '/chatgpt/mcp': ChatGPTMCP.serve('/chatgpt/mcp', { binding: 'CHATGPT_MCP_OBJECT' }),
+        '/chatgpt/mcp/': ChatGPTMCP.serve('/chatgpt/mcp', { binding: 'CHATGPT_MCP_OBJECT' }),
       },
       defaultHandler: app as any,
       authorizeEndpoint: "/authorize",

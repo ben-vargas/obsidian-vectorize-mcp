@@ -126,28 +126,25 @@ If you prefer to configure Claude Desktop directly instead of using Connectors, 
 Replace `<account_subdomain>` with your actual Cloudflare Workers subdomain in all examples.
 
 #### ChatGPT Integration
-This MCP server provides dedicated ChatGPT endpoints with optimized search/fetch tools:
 
-1. **Import as ChatGPT Connector**:
-   - In ChatGPT, go to Settings → Connectors
-   - Add a new connector using the ChatGPT-specific Streamable HTTP endpoint:
-     ```
-     https://obvec.<account_subdomain>.workers.dev/chatgpt/mcp
-     ```
-   - The server provides exactly the `search` and `fetch` tools ChatGPT requires
-   - Set `OBSIDIAN_VAULT_NAME` in your wrangler.toml for proper Obsidian URLs
+Connect your Obsidian vault to ChatGPT as a searchable knowledge source:
 
-2. **Clean Separation**:
-   - ChatGPT uses `/chatgpt/mcp` (Streamable HTTP) or `/chatgpt/sse` (SSE) endpoints with only search/fetch tools
-   - Standard MCP clients use `/mcp` (Streamable HTTP) or `/sse` (SSE) endpoints with full Obsidian tools
-   - No tool confusion or conflicts between different client types
+1. **Add as ChatGPT Connector**:
+   - Go to ChatGPT Settings → Connectors
+   - Add connector with URL: `https://obvec.<account_subdomain>.workers.dev/chatgpt/mcp`
+   - Authenticate via OAuth when prompted
+   - Select the connector in any chat where Connectors are supported
 
-3. **Use with Deep Research**:
-   - ChatGPT can use this connector for deep research tasks
-   - Your Obsidian notes become searchable knowledge for research
-   - Supports both chat connectors and API-based deep research
+2. **Basic Configuration**:
+   ```toml
+   # In wrangler.toml
+   OBSIDIAN_VAULT_NAME = "YourVaultName"  # For proper Obsidian URL generation
+   CHATGPT_MIN_SCORE = "0.3"              # Result threshold (lower = more results)
+   ```
 
-**Architecture Note**: The server uses separate Durable Objects for standard MCP and ChatGPT endpoints, ensuring complete isolation and optimal performance for each use case.
+3. **Works with all ChatGPT features** where Connectors are available (except GPT-5 Pro mode)
+
+📚 **For advanced configuration, QDF support, and troubleshooting, see [docs/chatgpt-integration.md](docs/chatgpt-integration.md)**
 
 ## 🔐 Authentication & Security
 
@@ -288,6 +285,7 @@ For advanced features like smart re-indexing, timestamp queries, custom embeddin
 ## 📚 Documentation
 
 For detailed guides, see:
+- **[ChatGPT Integration](docs/chatgpt-integration.md)** - ChatGPT connector setup and configuration
 - **[Architecture](docs/architecture.md)** - Technical implementation details
 - **[Advanced Configuration](docs/advanced-configuration.md)** - Power user features
 - **[Pricing & Performance](docs/pricing-and-performance.md)** - Cost analysis and limits

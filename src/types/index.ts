@@ -20,6 +20,9 @@ export interface Env {
   MCP_PASSWORD?: string; // Set via wrangler secret put MCP_PASSWORD
   // Obsidian configuration
   OBSIDIAN_VAULT_NAME?: string; // Name of the Obsidian vault for URL generation
+  // ChatGPT configuration
+  CHATGPT_MIN_SCORE?: string; // Minimum score threshold for ChatGPT search results (default: 0.3)
+  CHATGPT_USE_QDF?: string; // Enable Query Deserves Freshness time-based scoring (true/false, default: false)
 }
 
 export type State = { 
