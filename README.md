@@ -91,7 +91,7 @@ On [claude.ai](https://claude.ai), add a custom MCP Connector:
 2. Click "Add Custom Connector"
 3. Enter your MCP endpoint:
    - **Streamable HTTP**: `https://obvec.<account_subdomain>.workers.dev/mcp` (recommended - current MCP spec)
-   - **SSE**: `https://obvec.<account_subdomain>.workers.dev/sse` (deprecated - for backward compatibility)
+   - **SSE**: `https://obvec.<account_subdomain>.workers.dev/sse` (deprecated - only use if required)
 
 **Note**: The MCP specification deprecated SSE on March 26, 2025. We recommend using the Streamable HTTP endpoint.
 
@@ -124,6 +124,27 @@ If you prefer to configure Claude Desktop directly instead of using Connectors, 
 ```
 
 Replace `<account_subdomain>` with your actual Cloudflare Workers subdomain in all examples.
+
+#### ChatGPT Integration
+
+Connect your Obsidian vault to ChatGPT as a searchable knowledge source:
+
+1. **Add as ChatGPT Connector**:
+   - Go to ChatGPT Settings → Connectors
+   - Add connector with URL: `https://obvec.<account_subdomain>.workers.dev/chatgpt/mcp`
+   - Authenticate via OAuth when prompted
+   - Select the connector in any chat where Connectors are supported
+
+2. **Basic Configuration**:
+   ```toml
+   # In wrangler.toml
+   OBSIDIAN_VAULT_NAME = "YourVaultName"  # For proper Obsidian URL generation
+   CHATGPT_MIN_SCORE = "0.3"              # Result threshold (lower = more results)
+   ```
+
+3. **Works with all ChatGPT features** where Connectors are available (except GPT-5 Pro mode)
+
+📚 **For advanced configuration, QDF support, and troubleshooting, see [docs/chatgpt-integration.md](docs/chatgpt-integration.md)**
 
 ## 🔐 Authentication & Security
 
@@ -160,9 +181,27 @@ obvec/
 │   └── cleanup-orphaned.ts          # Remove deleted notes
 ├── src/
 │   ├── api/                         # API endpoints
+│   │   ├── cleanup.ts               # Cleanup orphaned notes
+│   │   ├── index.ts                 # Index management
+│   │   ├── list-indexed.ts          # List indexed notes
+│   │   ├── router.ts                # API router
+│   │   ├── search.ts                # Search functionality
+│   │   ├── stats.ts                 # Statistics endpoint
+│   │   └── test-mcp.ts              # MCP testing utilities
 │   ├── auth/                        # Authentication UI
-│   ├── mcp/                         # MCP server implementation
+│   │   └── app.ts                   # OAuth app handler
+│   ├── mcp/                         # MCP server implementations
+│   │   ├── server.ts                # Standard MCP server (full tools)
+│   │   └── server-chatgpt.ts        # ChatGPT-specific server (search/fetch only)
 │   ├── types/                       # TypeScript types
+│   │   └── index.ts                 # Type definitions
+│   ├── utils/                       # Utility functions
+│   │   ├── auth.ts                  # Authentication utilities
+│   │   ├── embeddings.ts            # Embedding generation
+│   │   ├── formatting.ts            # Text formatting
+│   │   ├── hash.ts                  # Hashing utilities
+│   │   ├── security.ts              # Security utilities
+│   │   └── validation.ts            # Input validation
 │   └── index.ts                     # Main Worker entry
 ├── .env.example                     # Environment variables template
 ├── .gitignore                       # Git ignore patterns
@@ -246,6 +285,7 @@ For advanced features like smart re-indexing, timestamp queries, custom embeddin
 ## 📚 Documentation
 
 For detailed guides, see:
+- **[ChatGPT Integration](docs/chatgpt-integration.md)** - ChatGPT connector setup and configuration
 - **[Architecture](docs/architecture.md)** - Technical implementation details
 - **[Advanced Configuration](docs/advanced-configuration.md)** - Power user features
 - **[Pricing & Performance](docs/pricing-and-performance.md)** - Cost analysis and limits
