@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    // Note: "module": "ESNext" is required for Cloudflare Workers compilation
+    // The scripts/ directory uses tsx which handles ES modules correctly
+    // even though package.json has "type": "commonjs" for bin/obvec.js compatibility
     "target": "ES2022",
     "lib": ["ES2022"],
     "module": "ESNext",

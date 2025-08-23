@@ -1,6 +1,16 @@
 #!/usr/bin/env tsx
 
+import { config } from 'dotenv';
 import { execSync } from 'child_process';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load environment variables from .env file
+config({ path: resolve(__dirname, '../.env') });
 
 async function resetIndex() {
   console.log('🧹 Resetting Obsidian Vectorize Index...\n');
@@ -46,6 +56,5 @@ async function resetIndex() {
   }
 }
 
-if (require.main === module) {
-  resetIndex();
-}
+// Run if this is the main module
+resetIndex();
