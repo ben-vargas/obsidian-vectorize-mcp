@@ -2,7 +2,12 @@
 
 import { config } from 'dotenv';
 import { argv } from 'process';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load environment variables from .env file
 config({ path: resolve(__dirname, '../.env') });
@@ -122,6 +127,5 @@ async function searchNotes() {
   }
 }
 
-if (require.main === module) {
-  searchNotes();
-}
+// Run if this is the main module
+searchNotes();

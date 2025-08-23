@@ -124,6 +124,5 @@ async function cleanupOrphaned() {
   }
 }
 
-if (require.main === module) {
-  cleanupOrphaned();
-}
+// Run if this is the main module
+cleanupOrphaned();

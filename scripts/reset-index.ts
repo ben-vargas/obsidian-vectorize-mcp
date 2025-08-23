@@ -46,6 +46,5 @@ async function resetIndex() {
   }
 }
 
-if (require.main === module) {
-  resetIndex();
-}
+// Run if this is the main module
+resetIndex();
