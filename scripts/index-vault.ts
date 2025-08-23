@@ -2,7 +2,12 @@
 
 import { config } from 'dotenv';
 import { readdir, readFile, stat } from 'fs/promises';
-import { join, extname, relative, resolve, normalize } from 'path';
+import { join, extname, relative, resolve, normalize, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load environment variables from .env file
 config({ path: resolve(__dirname, '../.env') });
@@ -249,6 +254,5 @@ async function main() {
   await indexVault(vaultPath, workerUrl);
 }
 
-if (require.main === module) {
-  main().catch(console.error);
-}
+// Run if this is the main module
+main().catch(console.error);
