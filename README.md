@@ -110,6 +110,8 @@ Breaking this down:
 - `obvec` - The name you want to give the server
 - `https://obvec.<account_subdomain>.workers.dev/mcp` - The URL of your MCP endpoint
 
+> **Note for Claude Code users**: OAuth tokens now default to 30 days to prevent frequent re-authentication. If you still experience timeouts, see [troubleshooting](docs/troubleshooting.md#common-issues).
+
 #### Manual Claude Desktop Configuration (Optional)
 If you prefer to configure Claude Desktop directly instead of using Connectors, add to your `claude_desktop_config.json`:
 ```json

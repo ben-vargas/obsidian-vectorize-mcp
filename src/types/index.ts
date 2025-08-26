@@ -23,6 +23,8 @@ export interface Env {
   // ChatGPT configuration
   CHATGPT_MIN_SCORE?: string; // Minimum score threshold for ChatGPT search results (default: 0.3)
   CHATGPT_USE_QDF?: string; // Enable Query Deserves Freshness time-based scoring (true/false, default: false)
+  // OAuth configuration
+  OAUTH_ACCESS_TOKEN_TTL?: string; // Access token TTL in seconds (default: 2592000 = 30 days)
 }
 
 export type State = { 

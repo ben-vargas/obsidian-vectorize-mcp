@@ -30,6 +30,10 @@ EMBEDDING_DIMENSIONS = "1024"
 # Optional: Enable Query Deserves Freshness (QDF) time-based scoring (true/false, default: false)
 # When enabled, ChatGPT's freshness hints boost recent notes in search results
 # CHATGPT_USE_QDF = "false"
+# Optional: OAuth access token TTL in seconds (default: 2592000 = 30 days)
+# Increase this if you're getting frequent re-authentication prompts in Claude Code
+# Note: Web clients (claude.ai, ChatGPT) handle token refresh automatically and don't require this
+# OAUTH_ACCESS_TOKEN_TTL = "2592000"
 
 # Authentication Configuration
 # Set your MCP password using: wrangler secret put MCP_PASSWORD
