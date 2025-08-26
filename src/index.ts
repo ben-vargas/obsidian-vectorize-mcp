@@ -17,6 +17,12 @@ export default {
       return handleApiRequest(request, env);
     }
     
+    // Get access token TTL from environment or use default (30 days)
+    // This helps Claude Code which doesn't handle refresh tokens automatically
+    const accessTokenTTL = env.OAUTH_ACCESS_TOKEN_TTL 
+      ? parseInt(env.OAUTH_ACCESS_TOKEN_TTL, 10) 
+      : 30 * 24 * 60 * 60; // Default: 30 days in seconds
+    
     // Create OAuth provider with support for both standard and ChatGPT endpoints
     const oauthProvider = new OAuthProvider({
       apiHandlers: {
@@ -36,6 +42,8 @@ export default {
       authorizeEndpoint: "/authorize",
       tokenEndpoint: "/token",
       clientRegistrationEndpoint: "/register",
+      // Extend access token lifetime from default 1 hour
+      accessTokenTTL,
     });
     
     return oauthProvider.fetch(request, env, ctx);

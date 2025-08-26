@@ -2,24 +2,47 @@
 
 ## Common Issues
 
-**1. "OAUTH_KV binding not found"**
+**1. Frequent Re-authentication in Claude Code (CLI)**
+
+**Problem**: Claude Code prompts for re-authentication frequently (e.g., daily).
+
+**Root Cause**: The default OAuth access token expires after 1 hour. Unlike web browsers (claude.ai, ChatGPT), Claude Code doesn't automatically handle token refresh.
+
+**Solution**: The codebase now defaults to 30-day tokens. To adjust further:
+
+```toml
+# In wrangler.toml, add or adjust:
+[vars]
+OAUTH_ACCESS_TOKEN_TTL = "2592000"  # 30 days (default)
+# Or for longer tokens:
+OAUTH_ACCESS_TOKEN_TTL = "7776000"  # 90 days
+```
+
+After updating, redeploy:
+```bash
+obvec deploy
+```
+
+**Note**: This only affects CLI tools like Claude Code. Web clients handle token refresh automatically.
+
+**2. "OAUTH_KV binding not found"**
 ```bash
 wrangler kv:namespace create oauth_tokens
 # Update wrangler.toml with returned namespace ID
 ```
 
-**2. "MCP_PASSWORD not configured"**
+**3. "MCP_PASSWORD not configured"**
 ```bash
 wrangler secret put MCP_PASSWORD
 ```
 
-**3. "OAuth flow not working"**
+**4. "OAuth flow not working"**
 ```bash
 # Test authorization endpoint
 curl "https://your-worker.workers.dev/authorize?client_id=test&redirect_uri=http%3A//localhost&state=123"
 ```
 
-**4. MCP client connection issues**
+**5. MCP client connection issues**
 ```bash
 # Test with MCP Inspector
 npx @modelcontextprotocol/inspector
