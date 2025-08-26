@@ -1,6 +1,6 @@
 {
   "name": "obvec",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AI-powered Obsidian knowledge base with Cloudflare Vectorize and MCP support. Transform your Obsidian vault into a searchable, AI-accessible knowledge base using serverless Cloudflare Workers.",
   "main": "src/index.ts",
   "bin": {
