@@ -1,8 +1,15 @@
 # Obsidian Vectorize MCP
 
+> **ARCHIVED**: This project has been archived and is no longer maintained. It has been superseded by [obsidian-github](https://github.com/luccomo/obsidian-github.git), which provides an improved approach to Obsidian vault integration.
+
+---
+
+<details>
+<summary>Original README (for reference)</summary>
+
 A modern, serverless solution for indexing Obsidian notes using Cloudflare's official OAuth 2.1 pattern, Vectorize, and Workers AI, with native Model Context Protocol (MCP) support.
 
-## 🚀 Key Features
+## Key Features
 
 - **Cost Effective**: ~$0-10/month for typical personal use (250 - 2.5k Notes)
 - **Affordable Embedding Costs**: Workers AI embedding models used - no OpenAI API fees needed
@@ -304,3 +311,5 @@ For detailed guides, see:
 ## 📄 License
 
 MIT License - see LICENSE file for details
+
+</details>
