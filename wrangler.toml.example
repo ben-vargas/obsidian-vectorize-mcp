@@ -15,9 +15,14 @@ name = "CHATGPT_MCP_OBJECT"
 class_name = "ChatGPTMCP"
 script_name = "obvec"
 
+[[durable_objects.bindings]]
+name = "NOTE_LIST_INDEX"
+class_name = "NoteListIndexCoordinator"
+script_name = "obvec"
+
 [[migrations]]
-tag = "v2"
-new_sqlite_classes = ["ObsidianVectorizeMCP", "ChatGPTMCP"]
+tag = "v3"
+new_sqlite_classes = ["ObsidianVectorizeMCP", "ChatGPTMCP", "NoteListIndexCoordinator"]
 
 [vars]
 EMBEDDING_MODEL = "@cf/baai/bge-large-en-v1.5"

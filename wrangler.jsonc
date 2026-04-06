@@ -3,5 +3,20 @@
   "name": "obvec",
   "main": "src/index.ts",
   "compatibility_date": "2025-07-30",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NOTE_LIST_INDEX",
+        "class_name": "NoteListIndexCoordinator",
+        "script_name": "obvec"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["NoteListIndexCoordinator"]
+    }
+  ]
 }

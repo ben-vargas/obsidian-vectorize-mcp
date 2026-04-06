@@ -4,9 +4,10 @@ import ObsidianVectorizeMCPHandler, { ObsidianVectorizeMCP } from './mcp/server'
 import ChatGPTMCPHandler, { ChatGPTMCP } from './mcp/server-chatgpt';
 import { handleApiRequest } from './api/router';
 import app from './auth/app';
+import { NoteListIndexCoordinator } from './utils/note-list-index';
 
 // Export both Durable Object classes
-export { ObsidianVectorizeMCP, ChatGPTMCP };
+export { ObsidianVectorizeMCP, ChatGPTMCP, NoteListIndexCoordinator };
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {

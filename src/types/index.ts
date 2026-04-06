@@ -14,6 +14,7 @@ export interface Env {
   OAUTH_KV: KVNamespace; // Required for OAuth Provider Library
   MCP_OBJECT: DurableObjectNamespace; // MCP Durable Object
   CHATGPT_MCP_OBJECT: DurableObjectNamespace; // ChatGPT-specific MCP Durable Object
+  NOTE_LIST_INDEX: DurableObjectNamespace; // Singleton note listing index coordinator
   EMBEDDING_MODEL?: string;
   EMBEDDING_DIMENSIONS?: string;
   // Simple Authentication (for mock auth flow)
