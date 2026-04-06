@@ -5,6 +5,8 @@ const NOTE_LIST_INDEX_COORDINATOR_NAME = 'global';
 const NOTE_LIST_INDEX_BASE_URL = 'https://note-list-index';
 const INDEX_STORAGE_KEY = 'note-list-index';
 const INDEX_INITIALIZED_KEY = 'note-list-index-initialized';
+const NOTE_LIST_INDEX_BINDING_ERROR =
+  'NOTE_LIST_INDEX Durable Object binding is missing. Update wrangler.toml from wrangler.toml.example or wrangler.toml.upgrade before using list_notes, /api/index, or /api/cleanup.';
 
 type NoteListEntryInput = Pick<Note, 'path' | 'title' | 'tags' | 'createdAt' | 'modifiedAt'>;
 
@@ -106,6 +108,10 @@ async function rebuildIndexFromR2(env: Env): Promise<NoteListIndex> {
 }
 
 function getCoordinatorStub(env: Env): DurableObjectStub {
+  if (!env.NOTE_LIST_INDEX) {
+    throw new Error(NOTE_LIST_INDEX_BINDING_ERROR);
+  }
+
   return env.NOTE_LIST_INDEX.get(env.NOTE_LIST_INDEX.idFromName(NOTE_LIST_INDEX_COORDINATOR_NAME));
 }
 
