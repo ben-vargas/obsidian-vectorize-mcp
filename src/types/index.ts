@@ -43,6 +43,20 @@ export interface Note {
   modifiedAt?: string; // ISO 8601 timestamp
 }
 
+export interface NoteListEntry {
+  path: string;
+  title: string;
+  tags: string[];
+  createdAt?: string;
+  modifiedAt?: string;
+}
+
+export interface NoteListIndex {
+  version: 1;
+  updatedAt: string;
+  notes: Record<string, NoteListEntry>;
+}
+
 export interface SearchResult {
   score: number;
   title: string;

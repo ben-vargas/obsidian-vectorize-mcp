@@ -1,6 +1,7 @@
 import { Env } from '../types';
 import { checkAuthAndRateLimit } from '../utils/auth';
 import { hashPath } from '../utils/hash';
+import { removeNoteListEntries } from '../utils/note-list-index';
 import { sanitizePath } from '../utils/security';
 
 export async function handleCleanup(request: Request, env: Env): Promise<Response> {
@@ -17,6 +18,7 @@ export async function handleCleanup(request: Request, env: Env): Promise<Respons
     }
     
     let deletedCount = 0;
+    const deletedPaths: string[] = [];
     
     // Delete from both R2 and Vectorize
     for (const file of files) {
@@ -35,8 +37,11 @@ export async function handleCleanup(request: Request, env: Env): Promise<Respons
       // Delete from Vectorize (using the same hash ID generation)
       const shortId = await hashPath(validatedPath);
       await env.VECTORIZE.deleteByIds([shortId]);
+      deletedPaths.push(validatedPath);
       deletedCount++;
     }
+
+    await removeNoteListEntries(env, deletedPaths);
     
     return new Response(JSON.stringify({
       success: true,

@@ -2,6 +2,7 @@ import { Env, Note } from '../types';
 import { checkAuthAndRateLimit } from '../utils/auth';
 import { generateEmbeddings } from '../utils/embeddings';
 import { hashPath, calculateChecksum } from '../utils/hash';
+import { upsertNoteListEntries } from '../utils/note-list-index';
 import { sanitizePath } from '../utils/security';
 
 export async function handleIndex(request: Request, env: Env): Promise<Response> {
@@ -72,6 +73,7 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
     // Store metadata in R2 for full content (only if changed)
     let r2Updated = 0;
     let r2Skipped = 0;
+    const noteListEntries: Array<Pick<Note, 'path' | 'title' | 'tags' | 'createdAt' | 'modifiedAt'>> = [];
     
     for (const note of notes) {
       // Validate path before creating R2 key
@@ -85,6 +87,13 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
       }
       
       const r2Key = `notes/${validatedPath}`;
+      noteListEntries.push({
+        path: validatedPath,
+        title: note.title,
+        tags: note.tags,
+        createdAt: note.createdAt,
+        modifiedAt: note.modifiedAt
+      });
       
       // Calculate checksum of the note content
       const noteContent = JSON.stringify(note);
@@ -105,6 +114,8 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
         r2Skipped++;
       }
     }
+
+    await upsertNoteListEntries(env, noteListEntries);
     
     return new Response(JSON.stringify({
       success: true,

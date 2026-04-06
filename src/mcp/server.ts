@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Env, State } from '../types';
 import { generateEmbedding, getEmbeddingDimensions } from '../utils/embeddings';
+import { getOrRebuildNoteListIndex } from '../utils/note-list-index';
 import { validateLimit, validateMinScore } from '../utils/validation';
 
 function registerObsidianTools(agent: ObsidianVectorizeMCP, env: Env) {
@@ -242,82 +243,40 @@ ${fullContent}`
       },
       async ({ limit, tags, pathPrefix, sortBy, dateFrom, dateTo }) => {
         try {
-          // Query R2 directly for listing notes with pagination
-          const prefix = pathPrefix ? `notes/${pathPrefix}` : 'notes/';
-          let notes = [];
-          let cursor: string | undefined;
-          let truncated = false;
-          let totalProcessed = 0;
-          
-          // When sorting by date, we must collect all matching notes before applying the limit,
-          // because R2 returns objects in alphabetical key order, not by date.
-          const needsFullScan = sortBy === 'createdAt' || sortBy === 'modifiedAt';
+          const noteListIndex = await getOrRebuildNoteListIndex(env);
+          let notes = Object.values(noteListIndex.notes);
 
-          do {
-            const r2Listed = await env.R2.list({
-              prefix,
-              limit: 1000,
-              cursor
-            });
-
-            if (totalProcessed === 0 && r2Listed.objects.length === 0) {
-              return {
-                content: [{
-                  type: "text" as const,
-                  text: 'No notes found matching the specified criteria.'
-                }]
-              };
-            }
-
-            // Process notes and apply filters
-            for (const obj of r2Listed.objects) {
-              if (!needsFullScan && notes.length >= limit) break;
-
-            try {
-              const noteData = await env.R2.get(obj.key);
-              if (noteData) {
-                const note = await noteData.json() as any;
-                const path = obj.key.replace('notes/', '');
-
-                // Filter by tags if specified
-                if (tags && tags.length > 0) {
-                  const noteTags = note.tags || [];
-                  if (!tags.some(tag => noteTags.includes(tag))) {
-                    continue;
-                  }
-                }
-
-                // Apply date filters
-                if (dateFrom || dateTo) {
-                  const noteDate = sortBy === 'createdAt' ? note.createdAt : note.modifiedAt;
-                  if (noteDate) {
-                    const date = new Date(noteDate);
-                    if (dateFrom && date < new Date(dateFrom)) continue;
-                    if (dateTo && date > new Date(dateTo)) continue;
-                  }
-                }
-
-                notes.push({
-                  title: note.title || path.split('/').pop()?.replace('.md', '') || 'Untitled',
-                  path: path,
-                  tags: note.tags || [],
-                  createdAt: note.createdAt,
-                  modifiedAt: note.modifiedAt
-                });
-              }
-            } catch (e) {
-              // Skip notes that can't be parsed
-              continue;
-            }
+          if (pathPrefix) {
+            notes = notes.filter(note => note.path.startsWith(pathPrefix));
           }
 
-          totalProcessed += r2Listed.objects.length;
-          truncated = r2Listed.truncated;
-          cursor = r2Listed.truncated ? r2Listed.cursor : undefined;
+          if (tags && tags.length > 0) {
+            notes = notes.filter(note => {
+              const noteTags = note.tags || [];
+              return tags.some(tag => noteTags.includes(tag));
+            });
+          }
 
-          // Only break early when sorting by title (already in R2 key order)
-          if (!needsFullScan && notes.length >= limit) break;
-        } while (truncated);
+          if (dateFrom || dateTo) {
+            const fromDate = dateFrom ? new Date(dateFrom) : null;
+            const toDate = dateTo ? new Date(dateTo) : null;
+
+            notes = notes.filter(note => {
+              const noteDate = sortBy === 'createdAt' ? note.createdAt : note.modifiedAt;
+              if (!noteDate) {
+                return true;
+              }
+
+              const parsedDate = new Date(noteDate);
+              if (fromDate && parsedDate < fromDate) {
+                return false;
+              }
+              if (toDate && parsedDate > toDate) {
+                return false;
+              }
+              return true;
+            });
+          }
 
           if (notes.length === 0) {
             return {
@@ -472,10 +431,7 @@ The semantic search understands context and meaning, making it easy to find rele
     searchCount: 0 
   };
 
-  constructor(
-    public override ctx: DurableObjectState,
-    public override env: Env
-  ) {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
   }
 

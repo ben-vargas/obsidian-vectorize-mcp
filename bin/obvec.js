@@ -79,7 +79,8 @@ function showVersion() {
 
 function runWrangler(cmd) {
   try {
-    const command = `npx wrangler ${cmd}`;
+    const runnerPath = path.join(__dirname, '..', 'scripts', 'run-wrangler.js');
+    const command = `node "${runnerPath}" ${cmd}`;
     console.log(`🔧 Running: ${command}`);
     execSync(command, { stdio: 'inherit', cwd: __dirname + '/..' });
   } catch (error) {

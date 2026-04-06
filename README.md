@@ -17,16 +17,23 @@ A modern, serverless solution for indexing Obsidian notes using Cloudflare's off
 ### 1. Clone & Setup
 
 > **Note**: This project requires git clone to access all necessary configuration files and source code for deployment.
+> **Runtime**: Node.js 20.3.0 or newer is required because the project now pins Wrangler 4.80.0.
 
 ```bash
 # Clone the repository
 git clone https://github.com/ben-vargas/obsidian-vectorize-mcp.git
 cd obsidian-vectorize-mcp
 
-# Install obvec CLI globally (includes all dependencies)
+# Use the repo's Node version
+nvm use || nvm install
+
+# Install dependencies
+npm ci
+
+# Optional: install obvec CLI globally
 npm install -g .
 
-# Copy and configure wrangler.toml
+# Copy and configure your deployable Wrangler config
 cp wrangler.toml.example wrangler.toml
 
 # Login to Cloudflare
@@ -222,6 +229,7 @@ obvec/
 obvec login        # Login to Cloudflare (alias for wrangler login)
 obvec deploy       # Deploy to production (alias for wrangler deploy)
 obvec dev          # Start local development (alias for wrangler dev)
+npm run build      # Build with the checked-in build-only Wrangler config
 ```
 
 ### Vault Management
