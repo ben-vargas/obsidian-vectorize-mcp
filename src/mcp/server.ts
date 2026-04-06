@@ -249,13 +249,17 @@ ${fullContent}`
           let truncated = false;
           let totalProcessed = 0;
           
+          // When sorting by date, we must collect all matching notes before applying the limit,
+          // because R2 returns objects in alphabetical key order, not by date.
+          const needsFullScan = sortBy === 'createdAt' || sortBy === 'modifiedAt';
+
           do {
-            const r2Listed = await env.R2.list({ 
+            const r2Listed = await env.R2.list({
               prefix,
               limit: 1000,
               cursor
             });
-            
+
             if (totalProcessed === 0 && r2Listed.objects.length === 0) {
               return {
                 content: [{
@@ -264,17 +268,17 @@ ${fullContent}`
                 }]
               };
             }
-            
+
             // Process notes and apply filters
             for (const obj of r2Listed.objects) {
-              if (notes.length >= limit) break;
-            
+              if (!needsFullScan && notes.length >= limit) break;
+
             try {
               const noteData = await env.R2.get(obj.key);
               if (noteData) {
                 const note = await noteData.json() as any;
                 const path = obj.key.replace('notes/', '');
-                
+
                 // Filter by tags if specified
                 if (tags && tags.length > 0) {
                   const noteTags = note.tags || [];
@@ -282,7 +286,7 @@ ${fullContent}`
                     continue;
                   }
                 }
-                
+
                 // Apply date filters
                 if (dateFrom || dateTo) {
                   const noteDate = sortBy === 'createdAt' ? note.createdAt : note.modifiedAt;
@@ -292,7 +296,7 @@ ${fullContent}`
                     if (dateTo && date > new Date(dateTo)) continue;
                   }
                 }
-                
+
                 notes.push({
                   title: note.title || path.split('/').pop()?.replace('.md', '') || 'Untitled',
                   path: path,
@@ -306,13 +310,13 @@ ${fullContent}`
               continue;
             }
           }
-          
+
           totalProcessed += r2Listed.objects.length;
           truncated = r2Listed.truncated;
           cursor = r2Listed.truncated ? r2Listed.cursor : undefined;
-          
-          // Stop if we have enough notes
-          if (notes.length >= limit) break;
+
+          // Only break early when sorting by title (already in R2 key order)
+          if (!needsFullScan && notes.length >= limit) break;
         } while (truncated);
 
           if (notes.length === 0) {
@@ -335,6 +339,9 @@ ${fullContent}`
             }
             return 0;
           });
+
+          // Apply limit after sorting (important for date-sorted queries that collected all notes)
+          notes = notes.slice(0, limit);
 
           const notesList = notes.map((note, index) => {
             const createdDate = note.createdAt ? new Date(note.createdAt).toLocaleDateString() : 'Unknown';
