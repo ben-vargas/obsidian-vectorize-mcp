@@ -262,19 +262,24 @@ ${fullContent}`
             const toDate = dateTo ? new Date(dateTo) : null;
 
             notes = notes.filter(note => {
-              const noteDate = sortBy === 'createdAt' ? note.createdAt : note.modifiedAt;
-              if (!noteDate) {
+              const noteDates = [note.createdAt, note.modifiedAt]
+                .filter((value): value is string => Boolean(value))
+                .map(value => new Date(value))
+                .filter(date => !Number.isNaN(date.getTime()));
+
+              if (noteDates.length === 0) {
                 return true;
               }
 
-              const parsedDate = new Date(noteDate);
-              if (fromDate && parsedDate < fromDate) {
-                return false;
-              }
-              if (toDate && parsedDate > toDate) {
-                return false;
-              }
-              return true;
+              return noteDates.some(noteDate => {
+                if (fromDate && noteDate < fromDate) {
+                  return false;
+                }
+                if (toDate && noteDate > toDate) {
+                  return false;
+                }
+                return true;
+              });
             });
           }
 

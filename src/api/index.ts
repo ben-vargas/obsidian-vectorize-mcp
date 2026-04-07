@@ -82,8 +82,9 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
         return;
       }
 
-      const entriesToFlush = noteListEntries.splice(0, noteListEntries.length);
+      const entriesToFlush = noteListEntries.slice();
       await upsertNoteListEntries(env, entriesToFlush);
+      noteListEntries.splice(0, entriesToFlush.length);
     };
     
     try {
