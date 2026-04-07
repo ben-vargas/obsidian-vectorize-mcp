@@ -2,7 +2,7 @@ import { Env, Note } from '../types';
 import { checkAuthAndRateLimit } from '../utils/auth';
 import { generateEmbeddings } from '../utils/embeddings';
 import { hashPath, calculateChecksum } from '../utils/hash';
-import { upsertNoteListEntries } from '../utils/note-list-index';
+import { assertNoteListIndexConfigured, upsertNoteListEntries } from '../utils/note-list-index';
 import { sanitizePath } from '../utils/security';
 
 export async function handleIndex(request: Request, env: Env): Promise<Response> {
@@ -12,6 +12,8 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
   }
   
   try {
+    assertNoteListIndexConfigured(env);
+
     const { notes } = await request.json() as { notes: Note[] };
     
     if (!notes || !Array.isArray(notes)) {

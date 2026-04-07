@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Env, State } from '../types';
 import { generateEmbedding, getEmbeddingDimensions } from '../utils/embeddings';
-import { getOrRebuildNoteListIndex } from '../utils/note-list-index';
+import { getNoteListIndex } from '../utils/note-list-index';
 import { validateLimit, validateMinScore } from '../utils/validation';
 
 function registerObsidianTools(agent: ObsidianVectorizeMCP, env: Env) {
@@ -243,7 +243,7 @@ ${fullContent}`
       },
       async ({ limit, tags, pathPrefix, sortBy, dateFrom, dateTo }) => {
         try {
-          const noteListIndex = await getOrRebuildNoteListIndex(env);
+          const noteListIndex = await getNoteListIndex(env);
           let notes = Object.values(noteListIndex.notes);
 
           if (pathPrefix) {
