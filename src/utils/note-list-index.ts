@@ -12,6 +12,7 @@ const NOTE_LIST_INDEX_BINDING_ERROR =
   'NOTE_LIST_INDEX Durable Object binding is missing. Update wrangler.toml from wrangler.toml.example or wrangler.toml.upgrade before using list_notes, /api/index, or /api/cleanup.';
 const NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR =
   'Note list index has not been initialized yet. Run your vault indexing flow again (for example `obvec index`) so list_notes can use the stored note metadata.';
+const NOTE_LIST_INDEX_NOT_INITIALIZED_STATUS = 409;
 const STORAGE_BATCH_SIZE = 100;
 const R2_FETCH_CONCURRENCY = 20;
 
@@ -141,6 +142,17 @@ function normalizeBackfillState(data: unknown): NoteListBackfillState | null {
   };
 }
 
+function isNoteListIndexUninitializedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as { message?: unknown; status?: unknown };
+  return candidate.status === NOTE_LIST_INDEX_NOT_INITIALIZED_STATUS ||
+    (typeof candidate.message === 'string' &&
+      candidate.message.includes(NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR));
+}
+
 async function buildIndexFromR2(env: Env): Promise<NoteListIndex> {
   const index = createEmptyIndex();
   let cursor: string | undefined;
@@ -210,7 +222,9 @@ async function readCoordinatorJson<T>(env: Env, path: string, init?: RequestInit
 
   if (!response.ok) {
     const message = (await response.text()) || `${response.status} ${response.statusText}`;
-    throw new Error(message);
+    const error = new Error(message) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
 
   return await response.json() as T;
@@ -220,7 +234,7 @@ export async function getNoteListIndex(env: Env): Promise<NoteListIndex> {
   try {
     return await readCoordinatorJson<NoteListIndex>(env, '/index');
   } catch (error: any) {
-    if (error?.message !== NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR) {
+    if (!isNoteListIndexUninitializedError(error)) {
       throw error;
     }
 
@@ -275,11 +289,20 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
     const url = new URL(request.url);
 
     if (request.method === 'GET' && url.pathname === '/index') {
-      const index = await this.runExclusive(async () => {
-        return this.readInitializedIndex();
-      });
+      try {
+        const index = await this.runExclusive(async () => {
+          return this.readInitializedIndex();
+        });
 
-      return Response.json(index);
+        return Response.json(index);
+      } catch (error) {
+        if (isNoteListIndexUninitializedError(error)) {
+          return new Response(NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR, {
+            status: NOTE_LIST_INDEX_NOT_INITIALIZED_STATUS
+          });
+        }
+        throw error;
+      }
     }
 
     if (request.method === 'POST' && url.pathname === '/upsert') {
