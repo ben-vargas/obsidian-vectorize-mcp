@@ -7,14 +7,19 @@ const LEGACY_INDEX_STORAGE_KEY = 'note-list-index';
 const LEGACY_INDEX_INITIALIZED_KEY = 'note-list-index-initialized';
 const INDEX_METADATA_KEY = 'note-list-index-meta';
 const NOTE_ENTRY_KEY_PREFIX = 'note-list-entry:';
+const BACKFILL_STATE_KEY = 'note-list-index-backfill-state';
 const NOTE_LIST_INDEX_BINDING_ERROR =
   'NOTE_LIST_INDEX Durable Object binding is missing. Update wrangler.toml from wrangler.toml.example or wrangler.toml.upgrade before using list_notes, /api/index, or /api/cleanup.';
 const NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR =
   'Note list index has not been initialized yet. Run your vault indexing flow again (for example `obvec index`) so list_notes can use the stored note metadata.';
 const STORAGE_BATCH_SIZE = 100;
+const R2_FETCH_CONCURRENCY = 20;
 
 type NoteListEntryInput = Pick<Note, 'path' | 'title' | 'tags' | 'createdAt' | 'modifiedAt'>;
 type NoteListIndexMetadata = Pick<NoteListIndex, 'version' | 'updatedAt'>;
+type NoteListBackfillState = {
+  cursor?: string;
+};
 
 function buildNoteListEntry(note: NoteListEntryInput): NoteListEntry {
   return {
@@ -119,6 +124,70 @@ function normalizeIndexMetadata(data: unknown): NoteListIndexMetadata | null {
   );
 }
 
+function normalizeBackfillState(data: unknown): NoteListBackfillState | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const candidate = data as Partial<NoteListBackfillState>;
+  return {
+    cursor: typeof candidate.cursor === 'string' && candidate.cursor.length > 0 ? candidate.cursor : undefined
+  };
+}
+
+async function buildIndexFromR2(env: Env): Promise<NoteListIndex> {
+  const index = createEmptyIndex();
+  let cursor: string | undefined;
+  let truncated = false;
+
+  do {
+    const listed = await env.R2.list({
+      prefix: 'notes/',
+      limit: 1000,
+      cursor
+    });
+
+    for (let i = 0; i < listed.objects.length; i += R2_FETCH_CONCURRENCY) {
+      const batch = listed.objects.slice(i, i + R2_FETCH_CONCURRENCY);
+      const entries = await Promise.all(batch.map(async (object) => {
+        const noteObject = await env.R2.get(object.key);
+        if (!noteObject) {
+          return null;
+        }
+
+        try {
+          const note = await noteObject.json() as Partial<Note>;
+          const path = object.key.replace('notes/', '');
+          return [path, buildNoteListEntry({
+            path,
+            title: note.title || '',
+            tags: Array.isArray(note.tags) ? note.tags : [],
+            createdAt: note.createdAt,
+            modifiedAt: note.modifiedAt
+          })] as const;
+        } catch {
+          return null;
+        }
+      }));
+
+      for (const entry of entries) {
+        if (!entry) {
+          continue;
+        }
+
+        const [path, noteEntry] = entry;
+        index.notes[path] = noteEntry;
+      }
+    }
+
+    truncated = listed.truncated;
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (truncated);
+
+  index.updatedAt = new Date().toISOString();
+  return index;
+}
+
 export function assertNoteListIndexConfigured(env: Env): void {
   if (!env.NOTE_LIST_INDEX) {
     throw new Error(NOTE_LIST_INDEX_BINDING_ERROR);
@@ -142,7 +211,21 @@ async function readCoordinatorJson<T>(env: Env, path: string, init?: RequestInit
 }
 
 export async function getNoteListIndex(env: Env): Promise<NoteListIndex> {
-  return readCoordinatorJson<NoteListIndex>(env, '/index');
+  try {
+    return await readCoordinatorJson<NoteListIndex>(env, '/index');
+  } catch (error: any) {
+    if (error?.message !== NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR) {
+      throw error;
+    }
+
+    try {
+      await startNoteListIndexBackfill(env);
+    } catch (backfillError) {
+      console.error('Failed to start note list index backfill:', backfillError);
+    }
+
+    return buildIndexFromR2(env);
+  }
 }
 
 export async function upsertNoteListEntries(env: Env, notes: NoteListEntryInput[]): Promise<void> {
@@ -166,6 +249,12 @@ export async function removeNoteListEntries(env: Env, paths: string[]): Promise<
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ paths })
+  });
+}
+
+async function startNoteListIndexBackfill(env: Env): Promise<void> {
+  await readCoordinatorJson<{ success: true }>(env, '/backfill', {
+    method: 'POST'
   });
 }
 
@@ -237,7 +326,21 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
       return Response.json({ success: true });
     }
 
+    if (request.method === 'POST' && url.pathname === '/backfill') {
+      await this.runExclusive(async () => {
+        await this.scheduleBackfill();
+      });
+
+      return Response.json({ success: true });
+    }
+
     return new Response('Not found', { status: 404 });
+  }
+
+  override async alarm(): Promise<void> {
+    await this.runExclusive(async () => {
+      await this.processBackfillChunk();
+    });
   }
 
   private async runExclusive<T>(operation: () => Promise<T>): Promise<T> {
@@ -256,6 +359,23 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
     }
 
     return normalizeIndex(await this.ctx.storage.get<unknown>(LEGACY_INDEX_STORAGE_KEY)) !== null;
+  }
+
+  private async scheduleBackfill(): Promise<void> {
+    await this.migrateLegacyIndexIfNeeded();
+    if (await this.isInitialized()) {
+      return;
+    }
+
+    const backfillState = normalizeBackfillState(await this.ctx.storage.get<unknown>(BACKFILL_STATE_KEY));
+    if (!backfillState) {
+      await this.ctx.storage.put(BACKFILL_STATE_KEY, { cursor: undefined });
+    }
+
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm === null) {
+      await this.ctx.storage.setAlarm(Date.now());
+    }
   }
 
   private async readInitializedIndex(): Promise<NoteListIndex> {
@@ -319,5 +439,68 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
 
     await this.ctx.storage.put(INDEX_METADATA_KEY, createIndexMetadata(legacyIndex.updatedAt));
     await this.ctx.storage.delete([LEGACY_INDEX_STORAGE_KEY, LEGACY_INDEX_INITIALIZED_KEY]);
+  }
+
+  private async processBackfillChunk(): Promise<void> {
+    await this.migrateLegacyIndexIfNeeded();
+    if (await this.isInitialized()) {
+      await this.ctx.storage.delete(BACKFILL_STATE_KEY);
+      return;
+    }
+
+    const backfillState = normalizeBackfillState(await this.ctx.storage.get<unknown>(BACKFILL_STATE_KEY)) || {};
+    const listed = await this.env.R2.list({
+      prefix: 'notes/',
+      limit: STORAGE_BATCH_SIZE,
+      cursor: backfillState.cursor
+    });
+
+    const writes: Record<string, NoteListEntry> = {};
+
+    for (let i = 0; i < listed.objects.length; i += R2_FETCH_CONCURRENCY) {
+      const batch = listed.objects.slice(i, i + R2_FETCH_CONCURRENCY);
+      const entries = await Promise.all(batch.map(async (object) => {
+        const noteObject = await this.env.R2.get(object.key);
+        if (!noteObject) {
+          return null;
+        }
+
+        try {
+          const note = await noteObject.json() as Partial<Note>;
+          const path = object.key.replace('notes/', '');
+          return [getEntryStorageKey(path), buildNoteListEntry({
+            path,
+            title: note.title || '',
+            tags: Array.isArray(note.tags) ? note.tags : [],
+            createdAt: note.createdAt,
+            modifiedAt: note.modifiedAt
+          })] as const;
+        } catch {
+          return null;
+        }
+      }));
+
+      for (const entry of entries) {
+        if (!entry) {
+          continue;
+        }
+
+        const [key, noteEntry] = entry;
+        writes[key] = noteEntry;
+      }
+    }
+
+    if (Object.keys(writes).length > 0) {
+      await this.ctx.storage.put(writes);
+    }
+
+    if (listed.truncated) {
+      await this.ctx.storage.put(BACKFILL_STATE_KEY, { cursor: listed.cursor });
+      await this.ctx.storage.setAlarm(Date.now());
+      return;
+    }
+
+    await this.ctx.storage.put(INDEX_METADATA_KEY, createIndexMetadata());
+    await this.ctx.storage.delete(BACKFILL_STATE_KEY);
   }
 }
