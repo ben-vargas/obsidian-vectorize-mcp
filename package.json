@@ -1,6 +1,6 @@
 {
   "name": "obvec",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "AI-powered Obsidian knowledge base with Cloudflare Vectorize and MCP support. Transform your Obsidian vault into a searchable, AI-accessible knowledge base using serverless Cloudflare Workers.",
   "main": "src/index.ts",
   "bin": {
@@ -9,15 +9,18 @@
   "directories": {
     "doc": "docs"
   },
+  "engines": {
+    "node": ">=20.3.0"
+  },
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "build": "wrangler build",
+    "dev": "node scripts/run-wrangler.js dev",
+    "deploy": "node scripts/run-wrangler.js deploy",
+    "build": "node scripts/run-wrangler.js build",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "types": "wrangler types",
+    "types": "node scripts/run-wrangler.js types",
     "index": "tsx scripts/index-vault.ts",
     "setup": "tsx scripts/setup-resources.ts",
-    "login": "wrangler login"
+    "login": "node scripts/run-wrangler.js login"
   },
   "keywords": [
     "obsidian",
@@ -54,7 +57,7 @@
     "agents": "^0.0.109",
     "dotenv": "^17.2.1",
     "hono": "^4.8.10",
-    "wrangler": "^4.27.0",
+    "wrangler": "4.80.0",
     "zod": "^3.25.76"
   }
 }

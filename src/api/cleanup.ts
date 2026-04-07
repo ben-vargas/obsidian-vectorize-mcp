@@ -1,6 +1,7 @@
 import { Env } from '../types';
 import { checkAuthAndRateLimit } from '../utils/auth';
 import { hashPath } from '../utils/hash';
+import { assertNoteListIndexConfigured, removeNoteListEntries } from '../utils/note-list-index';
 import { sanitizePath } from '../utils/security';
 
 export async function handleCleanup(request: Request, env: Env): Promise<Response> {
@@ -10,6 +11,8 @@ export async function handleCleanup(request: Request, env: Env): Promise<Respons
   }
   
   try {
+    assertNoteListIndexConfigured(env);
+
     const { files } = await request.json() as { files: string[] };
     
     if (!files || !Array.isArray(files)) {
@@ -17,25 +20,48 @@ export async function handleCleanup(request: Request, env: Env): Promise<Respons
     }
     
     let deletedCount = 0;
+    const deletedPaths: string[] = [];
+    let cleanupError: Error | null = null;
     
     // Delete from both R2 and Vectorize
-    for (const file of files) {
-      // Validate and sanitize the path
-      let validatedPath;
-      try {
-        validatedPath = sanitizePath(file);
-      } catch (error) {
-        console.error(`Invalid path, skipping: ${file}`);
-        continue;
+    try {
+      for (const file of files) {
+        // Validate and sanitize the path
+        let validatedPath;
+        try {
+          validatedPath = sanitizePath(file);
+        } catch (error) {
+          console.error(`Invalid path, skipping: ${file}`);
+          continue;
+        }
+        
+        // Delete from Vectorize (using the same hash ID generation)
+        const shortId = await hashPath(validatedPath);
+        await env.VECTORIZE.deleteByIds([shortId]);
+
+        // Delete from R2 after Vectorize so a mid-file failure leaves the read path intact
+        await env.R2.delete(`notes/${validatedPath}`);
+        deletedPaths.push(validatedPath);
+        deletedCount++;
       }
-      
-      // Delete from R2
-      await env.R2.delete(`notes/${validatedPath}`);
-      
-      // Delete from Vectorize (using the same hash ID generation)
-      const shortId = await hashPath(validatedPath);
-      await env.VECTORIZE.deleteByIds([shortId]);
-      deletedCount++;
+    } catch (error) {
+      cleanupError = error as Error;
+    }
+
+    if (deletedPaths.length > 0) {
+      try {
+        await removeNoteListEntries(env, deletedPaths);
+      } catch (error) {
+        if (!cleanupError) {
+          cleanupError = error as Error;
+        } else {
+          console.error('Failed to remove note list entries after partial cleanup:', error);
+        }
+      }
+    }
+
+    if (cleanupError) {
+      throw cleanupError;
     }
     
     return new Response(JSON.stringify({

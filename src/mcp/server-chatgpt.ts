@@ -195,10 +195,7 @@ export class ChatGPTMCP extends McpAgent<Env, State, {}> {
     searchCount: 0 
   };
 
-  constructor(
-    public override ctx: DurableObjectState,
-    public override env: Env
-  ) {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     
     // Initialize the MCP server

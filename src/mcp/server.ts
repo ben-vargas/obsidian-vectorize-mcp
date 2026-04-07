@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Env, State } from '../types';
 import { generateEmbedding, getEmbeddingDimensions } from '../utils/embeddings';
+import { getNoteListIndex } from '../utils/note-list-index';
 import { validateLimit, validateMinScore } from '../utils/validation';
 
 function registerObsidianTools(agent: ObsidianVectorizeMCP, env: Env) {
@@ -242,78 +243,45 @@ ${fullContent}`
       },
       async ({ limit, tags, pathPrefix, sortBy, dateFrom, dateTo }) => {
         try {
-          // Query R2 directly for listing notes with pagination
-          const prefix = pathPrefix ? `notes/${pathPrefix}` : 'notes/';
-          let notes = [];
-          let cursor: string | undefined;
-          let truncated = false;
-          let totalProcessed = 0;
-          
-          do {
-            const r2Listed = await env.R2.list({ 
-              prefix,
-              limit: 1000,
-              cursor
-            });
-            
-            if (totalProcessed === 0 && r2Listed.objects.length === 0) {
-              return {
-                content: [{
-                  type: "text" as const,
-                  text: 'No notes found matching the specified criteria.'
-                }]
-              };
-            }
-            
-            // Process notes and apply filters
-            for (const obj of r2Listed.objects) {
-              if (notes.length >= limit) break;
-            
-            try {
-              const noteData = await env.R2.get(obj.key);
-              if (noteData) {
-                const note = await noteData.json() as any;
-                const path = obj.key.replace('notes/', '');
-                
-                // Filter by tags if specified
-                if (tags && tags.length > 0) {
-                  const noteTags = note.tags || [];
-                  if (!tags.some(tag => noteTags.includes(tag))) {
-                    continue;
-                  }
-                }
-                
-                // Apply date filters
-                if (dateFrom || dateTo) {
-                  const noteDate = sortBy === 'createdAt' ? note.createdAt : note.modifiedAt;
-                  if (noteDate) {
-                    const date = new Date(noteDate);
-                    if (dateFrom && date < new Date(dateFrom)) continue;
-                    if (dateTo && date > new Date(dateTo)) continue;
-                  }
-                }
-                
-                notes.push({
-                  title: note.title || path.split('/').pop()?.replace('.md', '') || 'Untitled',
-                  path: path,
-                  tags: note.tags || [],
-                  createdAt: note.createdAt,
-                  modifiedAt: note.modifiedAt
-                });
-              }
-            } catch (e) {
-              // Skip notes that can't be parsed
-              continue;
-            }
+          const noteListIndex = await getNoteListIndex(env);
+          let notes = Object.values(noteListIndex.notes);
+
+          if (pathPrefix) {
+            notes = notes.filter(note => note.path.startsWith(pathPrefix));
           }
-          
-          totalProcessed += r2Listed.objects.length;
-          truncated = r2Listed.truncated;
-          cursor = r2Listed.truncated ? r2Listed.cursor : undefined;
-          
-          // Stop if we have enough notes
-          if (notes.length >= limit) break;
-        } while (truncated);
+
+          if (tags && tags.length > 0) {
+            notes = notes.filter(note => {
+              const noteTags = note.tags || [];
+              return tags.some(tag => noteTags.includes(tag));
+            });
+          }
+
+          if (dateFrom || dateTo) {
+            const fromDate = dateFrom ? new Date(dateFrom) : null;
+            const toDate = dateTo ? new Date(dateTo) : null;
+
+            notes = notes.filter(note => {
+              const noteDates = [note.createdAt, note.modifiedAt]
+                .filter((value): value is string => Boolean(value))
+                .map(value => new Date(value))
+                .filter(date => !Number.isNaN(date.getTime()));
+
+              if (noteDates.length === 0) {
+                return true;
+              }
+
+              return noteDates.some(noteDate => {
+                if (fromDate && noteDate < fromDate) {
+                  return false;
+                }
+                if (toDate && noteDate > toDate) {
+                  return false;
+                }
+                return true;
+              });
+            });
+          }
 
           if (notes.length === 0) {
             return {
@@ -335,6 +303,9 @@ ${fullContent}`
             }
             return 0;
           });
+
+          // Apply limit after sorting (important for date-sorted queries that collected all notes)
+          notes = notes.slice(0, limit);
 
           const notesList = notes.map((note, index) => {
             const createdDate = note.createdAt ? new Date(note.createdAt).toLocaleDateString() : 'Unknown';
@@ -465,10 +436,7 @@ The semantic search understands context and meaning, making it easy to find rele
     searchCount: 0 
   };
 
-  constructor(
-    public override ctx: DurableObjectState,
-    public override env: Env
-  ) {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
   }
 

@@ -19,10 +19,19 @@ name = "CHATGPT_MCP_OBJECT"
 class_name = "ChatGPTMCP"
 script_name = "obvec"
 
-# Migration v2 only adds ChatGPTMCP since ObsidianVectorizeMCP already exists
+[[durable_objects.bindings]]
+name = "NOTE_LIST_INDEX"
+class_name = "NoteListIndexCoordinator"
+script_name = "obvec"
+
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["ChatGPTMCP"]
+
+# Migration v3 adds the singleton note list index coordinator
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["NoteListIndexCoordinator"]
 
 [vars]
 EMBEDDING_MODEL = "@cf/baai/bge-large-en-v1.5"

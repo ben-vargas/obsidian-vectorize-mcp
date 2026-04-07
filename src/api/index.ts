@@ -2,6 +2,7 @@ import { Env, Note } from '../types';
 import { checkAuthAndRateLimit } from '../utils/auth';
 import { generateEmbeddings } from '../utils/embeddings';
 import { hashPath, calculateChecksum } from '../utils/hash';
+import { assertNoteListIndexConfigured, upsertNoteListEntries } from '../utils/note-list-index';
 import { sanitizePath } from '../utils/security';
 
 export async function handleIndex(request: Request, env: Env): Promise<Response> {
@@ -11,6 +12,8 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
   }
   
   try {
+    assertNoteListIndexConfigured(env);
+
     const { notes } = await request.json() as { notes: Note[] };
     
     if (!notes || !Array.isArray(notes)) {
@@ -72,39 +75,73 @@ export async function handleIndex(request: Request, env: Env): Promise<Response>
     // Store metadata in R2 for full content (only if changed)
     let r2Updated = 0;
     let r2Skipped = 0;
+    const noteListEntries: Array<Pick<Note, 'path' | 'title' | 'tags' | 'createdAt' | 'modifiedAt'>> = [];
+
+    const flushNoteListEntries = async (): Promise<void> => {
+      if (noteListEntries.length === 0) {
+        return;
+      }
+
+      const entriesToFlush = noteListEntries.slice();
+      await upsertNoteListEntries(env, entriesToFlush);
+      noteListEntries.splice(0, entriesToFlush.length);
+    };
     
-    for (const note of notes) {
-      // Validate path before creating R2 key
-      let validatedPath;
-      try {
-        validatedPath = sanitizePath(note.path);
-      } catch (error) {
-        console.error(`Skipping note with invalid path: ${note.path}`);
-        r2Skipped++;
-        continue;
-      }
-      
-      const r2Key = `notes/${validatedPath}`;
-      
-      // Calculate checksum of the note content
-      const noteContent = JSON.stringify(note);
-      const checksum = await calculateChecksum(noteContent);
-      
-      // Check if file exists and compare checksum
-      const existingObject = await env.R2.head(r2Key);
-      const existingChecksum = existingObject?.customMetadata?.checksum;
-      
-      if (existingChecksum !== checksum) {
-        // File is new or changed, upload it
-        await env.R2.put(r2Key, noteContent, {
-          customMetadata: { checksum }
+    try {
+      for (const note of notes) {
+        // Validate path before creating R2 key
+        let validatedPath;
+        try {
+          validatedPath = sanitizePath(note.path);
+        } catch (error) {
+          console.error(`Skipping note with invalid path: ${note.path}`);
+          r2Skipped++;
+          continue;
+        }
+        
+        const r2Key = `notes/${validatedPath}`;
+        
+        // Calculate checksum of the note content
+        const noteContent = JSON.stringify(note);
+        const checksum = await calculateChecksum(noteContent);
+        
+        // Check if file exists and compare checksum
+        const existingObject = await env.R2.head(r2Key);
+        const existingChecksum = existingObject?.customMetadata?.checksum;
+        
+        if (existingChecksum !== checksum) {
+          // File is new or changed, upload it
+          await env.R2.put(r2Key, noteContent, {
+            customMetadata: { checksum }
+          });
+          r2Updated++;
+        } else {
+          // File unchanged, skip upload
+          r2Skipped++;
+        }
+
+        noteListEntries.push({
+          path: validatedPath,
+          title: note.title,
+          tags: note.tags,
+          createdAt: note.createdAt,
+          modifiedAt: note.modifiedAt
         });
-        r2Updated++;
-      } else {
-        // File unchanged, skip upload
-        r2Skipped++;
+
+        if (noteListEntries.length >= 10) {
+          await flushNoteListEntries();
+        }
       }
+    } catch (error) {
+      try {
+        await flushNoteListEntries();
+      } catch (flushError) {
+        console.error('Failed to flush note list entries after partial R2 update:', flushError);
+      }
+      throw error;
     }
+
+    await flushNoteListEntries();
     
     return new Response(JSON.stringify({
       success: true,
