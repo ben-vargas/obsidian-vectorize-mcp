@@ -7,6 +7,8 @@ const INDEX_STORAGE_KEY = 'note-list-index';
 const INDEX_INITIALIZED_KEY = 'note-list-index-initialized';
 const NOTE_LIST_INDEX_BINDING_ERROR =
   'NOTE_LIST_INDEX Durable Object binding is missing. Update wrangler.toml from wrangler.toml.example or wrangler.toml.upgrade before using list_notes, /api/index, or /api/cleanup.';
+const NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR =
+  'Note list index has not been initialized yet. Run your vault indexing flow again (for example `obvec index`) so list_notes can use the stored note metadata.';
 
 type NoteListEntryInput = Pick<Note, 'path' | 'title' | 'tags' | 'createdAt' | 'modifiedAt'>;
 
@@ -66,47 +68,6 @@ function normalizeIndex(data: unknown): NoteListIndex | null {
   };
 }
 
-async function rebuildIndexFromR2(env: Env): Promise<NoteListIndex> {
-  const rebuilt = createEmptyIndex();
-  let cursor: string | undefined;
-  let truncated = false;
-
-  do {
-    const listed = await env.R2.list({
-      prefix: 'notes/',
-      limit: 1000,
-      cursor
-    });
-
-    for (const object of listed.objects) {
-      const noteObject = await env.R2.get(object.key);
-      if (!noteObject) {
-        continue;
-      }
-
-      try {
-        const note = await noteObject.json() as Partial<Note>;
-        const path = object.key.replace('notes/', '');
-        rebuilt.notes[path] = buildNoteListEntry({
-          path,
-          title: note.title || '',
-          tags: Array.isArray(note.tags) ? note.tags : [],
-          createdAt: note.createdAt,
-          modifiedAt: note.modifiedAt
-        });
-      } catch {
-        continue;
-      }
-    }
-
-    truncated = listed.truncated;
-    cursor = listed.truncated ? listed.cursor : undefined;
-  } while (truncated);
-
-  rebuilt.updatedAt = new Date().toISOString();
-  return rebuilt;
-}
-
 function getCoordinatorStub(env: Env): DurableObjectStub {
   if (!env.NOTE_LIST_INDEX) {
     throw new Error(NOTE_LIST_INDEX_BINDING_ERROR);
@@ -119,7 +80,8 @@ async function readCoordinatorJson<T>(env: Env, path: string, init?: RequestInit
   const response = await getCoordinatorStub(env).fetch(`${NOTE_LIST_INDEX_BASE_URL}${path}`, init);
 
   if (!response.ok) {
-    throw new Error(`Note list coordinator request failed: ${response.status} ${response.statusText}`);
+    const message = (await response.text()) || `${response.status} ${response.statusText}`;
+    throw new Error(message);
   }
 
   return await response.json() as T;
@@ -165,8 +127,7 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
 
     if (request.method === 'GET' && url.pathname === '/index') {
       const index = await this.runExclusive(async () => {
-        await this.ensureInitialized();
-        return this.readStoredIndex();
+        return this.readInitializedIndex();
       });
 
       return Response.json(index);
@@ -180,7 +141,6 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
       }
 
       await this.runExclusive(async () => {
-        await this.ensureInitialized();
         const index = await this.readStoredIndex();
 
         for (const note of notes) {
@@ -201,7 +161,10 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
       }
 
       await this.runExclusive(async () => {
-        await this.ensureInitialized();
+        if (!(await this.isInitialized())) {
+          return;
+        }
+
         const index = await this.readStoredIndex();
 
         for (const path of paths) {
@@ -223,14 +186,16 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
     return next;
   }
 
-  private async ensureInitialized(): Promise<void> {
-    const initialized = await this.ctx.storage.get<boolean>(INDEX_INITIALIZED_KEY);
-    if (initialized) {
-      return;
+  private async isInitialized(): Promise<boolean> {
+    return (await this.ctx.storage.get<boolean>(INDEX_INITIALIZED_KEY)) === true;
+  }
+
+  private async readInitializedIndex(): Promise<NoteListIndex> {
+    if (!(await this.isInitialized())) {
+      throw new Error(NOTE_LIST_INDEX_NOT_INITIALIZED_ERROR);
     }
 
-    const rebuilt = await rebuildIndexFromR2(this.env);
-    await this.writeStoredIndex(rebuilt);
+    return this.readStoredIndex();
   }
 
   private async readStoredIndex(): Promise<NoteListIndex> {
