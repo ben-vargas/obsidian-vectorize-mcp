@@ -16,7 +16,9 @@ const STORAGE_BATCH_SIZE = 100;
 const R2_FETCH_CONCURRENCY = 20;
 
 type NoteListEntryInput = Pick<Note, 'path' | 'title' | 'tags' | 'createdAt' | 'modifiedAt'>;
-type NoteListIndexMetadata = Pick<NoteListIndex, 'version' | 'updatedAt'>;
+type NoteListIndexMetadata = Pick<NoteListIndex, 'version' | 'updatedAt'> & {
+  ready?: boolean;
+};
 type NoteListBackfillState = {
   cursor?: string;
 };
@@ -77,10 +79,11 @@ function normalizeIndex(data: unknown): NoteListIndex | null {
   };
 }
 
-function createIndexMetadata(updatedAt?: string): NoteListIndexMetadata {
+function createIndexMetadata(options?: { updatedAt?: string; ready?: boolean }): NoteListIndexMetadata {
   return {
     version: 1,
-    updatedAt: updatedAt || new Date().toISOString()
+    updatedAt: options?.updatedAt || new Date().toISOString(),
+    ready: options?.ready
   };
 }
 
@@ -120,7 +123,10 @@ function normalizeIndexMetadata(data: unknown): NoteListIndexMetadata | null {
   }
 
   return createIndexMetadata(
-    typeof candidate.updatedAt === 'string' ? candidate.updatedAt : undefined
+    {
+      updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : undefined,
+      ready: typeof candidate.ready === 'boolean' ? candidate.ready : undefined
+    }
   );
 }
 
@@ -285,6 +291,10 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
 
       await this.runExclusive(async () => {
         await this.migrateLegacyIndexIfNeeded();
+        const metadata = await this.readIndexMetadata();
+        const backfillInProgress = await this.hasBackfillState();
+        const isReady = this.metadataIsReady(metadata, backfillInProgress);
+
         for (let i = 0; i < notes.length; i += STORAGE_BATCH_SIZE) {
           const writes: Record<string, NoteListEntry> = {};
           for (const note of notes.slice(i, i + STORAGE_BATCH_SIZE)) {
@@ -294,7 +304,7 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
             await this.ctx.storage.put(writes);
           }
         }
-        await this.ctx.storage.put(INDEX_METADATA_KEY, createIndexMetadata());
+        await this.writeIndexMetadata(isReady);
       });
 
       return Response.json({ success: true });
@@ -309,10 +319,9 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
 
       await this.runExclusive(async () => {
         await this.migrateLegacyIndexIfNeeded();
-        if (!(await this.isInitialized())) {
-          return;
-        }
-
+        const metadata = await this.readIndexMetadata();
+        const backfillInProgress = await this.hasBackfillState();
+        const isReady = this.metadataIsReady(metadata, backfillInProgress);
         const deleteKeys = paths.map(getEntryStorageKey);
         for (let i = 0; i < deleteKeys.length; i += STORAGE_BATCH_SIZE) {
           const chunk = deleteKeys.slice(i, i + STORAGE_BATCH_SIZE);
@@ -320,7 +329,9 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
             await this.ctx.storage.delete(chunk);
           }
         }
-        await this.ctx.storage.put(INDEX_METADATA_KEY, createIndexMetadata());
+        if (metadata || backfillInProgress) {
+          await this.writeIndexMetadata(isReady);
+        }
       });
 
       return Response.json({ success: true });
@@ -350,8 +361,9 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
   }
 
   private async isInitialized(): Promise<boolean> {
-    if (normalizeIndexMetadata(await this.ctx.storage.get<unknown>(INDEX_METADATA_KEY))) {
-      return true;
+    const metadata = await this.readIndexMetadata();
+    if (metadata) {
+      return this.metadataIsReady(metadata, await this.hasBackfillState());
     }
 
     if ((await this.ctx.storage.get<boolean>(LEGACY_INDEX_INITIALIZED_KEY)) !== true) {
@@ -389,7 +401,7 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
   private async readStoredIndex(): Promise<NoteListIndex> {
     await this.migrateLegacyIndexIfNeeded();
 
-    const metadata = normalizeIndexMetadata(await this.ctx.storage.get<unknown>(INDEX_METADATA_KEY));
+    const metadata = await this.readIndexMetadata();
     if (!metadata) {
       return createEmptyIndex();
     }
@@ -410,6 +422,33 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
       updatedAt: metadata.updatedAt,
       notes
     };
+  }
+
+  private async readIndexMetadata(): Promise<NoteListIndexMetadata | null> {
+    return normalizeIndexMetadata(await this.ctx.storage.get<unknown>(INDEX_METADATA_KEY));
+  }
+
+  private async hasBackfillState(): Promise<boolean> {
+    return normalizeBackfillState(await this.ctx.storage.get<unknown>(BACKFILL_STATE_KEY)) !== null;
+  }
+
+  private metadataIsReady(metadata: NoteListIndexMetadata | null, backfillInProgress: boolean): boolean {
+    if (!metadata) {
+      return false;
+    }
+
+    if (backfillInProgress) {
+      return false;
+    }
+
+    return metadata.ready !== false;
+  }
+
+  private async writeIndexMetadata(ready: boolean, updatedAt?: string): Promise<void> {
+    await this.ctx.storage.put(
+      INDEX_METADATA_KEY,
+      createIndexMetadata({ updatedAt, ready })
+    );
   }
 
   private async migrateLegacyIndexIfNeeded(): Promise<void> {
@@ -437,7 +476,7 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
       }
     }
 
-    await this.ctx.storage.put(INDEX_METADATA_KEY, createIndexMetadata(legacyIndex.updatedAt));
+    await this.writeIndexMetadata(true, legacyIndex.updatedAt);
     await this.ctx.storage.delete([LEGACY_INDEX_STORAGE_KEY, LEGACY_INDEX_INITIALIZED_KEY]);
   }
 
@@ -500,7 +539,7 @@ export class NoteListIndexCoordinator extends DurableObject<Env> {
       return;
     }
 
-    await this.ctx.storage.put(INDEX_METADATA_KEY, createIndexMetadata());
+    await this.writeIndexMetadata(true);
     await this.ctx.storage.delete(BACKFILL_STATE_KEY);
   }
 }
